@@ -26,11 +26,11 @@ class AVL {
   public boolean hasKey(int key) {
     AVL current = this;
     while(!current.isEmpty()) {
-      if(id == key)
+      if(current.id == key)
         return true;
-      if(key < id)
+      if(key < current.id)
         current = current.left;
-      if(key > id)
+      if(key > current.id)
         current = current.right;
     }
     return false;
