@@ -30,6 +30,9 @@ class TestAVL {
         myTree.add(i);
       myTree.print();
       System.out.printf("Height:%d %s %s\n", myTree.getHeight(), myTree.checkBalanced(), myTree.checkTree());
+      myTree.remove(5);
+      myTree.remove(7);
+      myTree.print();
     }
     for(int i = 0; i < 10; i++) {
       AVL myTree = randomTree(500);

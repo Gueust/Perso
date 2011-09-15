@@ -53,6 +53,76 @@ class AVL {
     rebalance();
   }
 
+  public int removeBottom(boolean rightSide) {
+    int result = 0;
+    if(height == 1) {
+      result = id;
+      left = null;
+      right = null;
+      height = 0;
+    }
+    else if(rightSide && right.height == 0) { // in this case, left.height = 1
+      result = id;
+      id = left.id;
+      left.left = null;
+      left.right = null;
+      left.height = 0;
+    }
+    else if(rightSide && right.height == 1) {
+      right.height = 0;
+      right.right = null;
+      right.left = null;
+      result = id;
+    }
+    else if(rightSide)
+      result = right.removeBottom(rightSide);
+    else if(!rightSide && left.height == 0) { // here, right.height = 1
+      result = id;
+      id = right.id;
+      right.left = null;
+      right.right = null;
+      right.height = 0;
+    }
+    else if(!rightSide && left.height == 1) {
+      left.height = 0;
+      left.left = null;
+      left.right = null;
+      result = id;
+    }
+    else if(!rightSide)
+      result = left.removeBottom(rightSide);
+    else
+      assert(false);
+    if(height != 0 ) {
+      setHeight();
+      rebalance();
+    }
+    return result;
+  }
+
+  public void remove(int key) {
+    if(height == 0)
+      return;
+    if(id == key) {
+      if(height == 1) {
+        height = 0;
+        return;
+      }
+      if(left.height > right.height)
+        id = left.removeBottom(true);
+      else
+        id = right.removeBottom(false);
+    }
+    else {
+      if(key < id)
+        left.remove(key);
+      if(key > id)
+        right.remove(key);
+    }
+    setHeight();
+    rebalance();
+  }
+
   public void setHeight() {
     height = 1 + Math.max(left.height, right.height);
   }
