@@ -42,7 +42,7 @@ let blue  = Color(red: 0, green: 0, blue: 1)
 let white = Color(red: 1, green: 1, blue: 1)
 
 func writePPM(filename: String, image: [[Color]]) {
-  FileManager.default.createFile(atPath: filename, contents: nil, attributes: nil)
+  let _ = FileManager.default.createFile(atPath: filename, contents: nil, attributes: nil)
   let file = FileHandle(forWritingAtPath: filename)!
   let nbRows = image.count
   precondition(nbRows > 0, "number of rows has to be positive")
@@ -100,7 +100,7 @@ func *(v: Vec3, scale: Double) -> Vec3 {
   return Vec3(x: v.x * scale, y: v.y * scale, z: v.z * scale)
 }
 
-// Outer product
+// Cross product
 func *(lhs: Vec3, rhs: Vec3) -> Vec3 {
   return Vec3(
     x: lhs.y * rhs.z - rhs.y * lhs.z,
@@ -198,6 +198,32 @@ struct Material {
     self.shininess = 0
     self.emission = black
   }
+
+  // There must be an easier way to do this copy-all-but-one initialization.
+  init(_ material: Material, diffuse: Color) {
+    self.diffuse = diffuse
+    self.specular = material.specular
+    self.shininess = material.shininess
+    self.emission = material.emission
+  }
+  init(_ material: Material, specular: Color) {
+    self.diffuse = material.diffuse
+    self.specular = specular
+    self.shininess = material.shininess
+    self.emission = material.emission
+  }
+  init(_ material: Material, shininess: Double) {
+    self.diffuse = material.diffuse
+    self.specular = material.specular
+    self.shininess = shininess
+    self.emission = material.emission
+  }
+  init(_ material: Material, emission: Color) {
+    self.diffuse = material.diffuse
+    self.specular = material.specular
+    self.shininess = material.shininess
+    self.emission = emission
+  }
 }
 
 struct Camera {
@@ -287,12 +313,45 @@ func sphere(_ material: Material, _ center: Vec3, _ r: Double) -> Object {
     int: int)
 }
 
+func triangle(_ material: Material, _ a: Vec3, _ b: Vec3, _ c: Vec3) -> Object {
+  let normal = ((c - a) * (b - a)).normalize()
+  let orthAB = (b - a) * normal
+  let orthCA = (a - c) * normal
+  let orthBC = (c - b) * normal
+  let dAB_C = orthAB ** (c - a)
+  let dBC_A = orthBC ** (a - b)
+  let dCA_B = orthCA ** (b - c)
+  let int: (Ray) -> Intersection? = { (ray: Ray) in
+    let div = ray.direction ** normal
+    if abs(div) < 1e-10 {
+      return nil
+    }
+    let t = ((a ** normal) - (ray.origin ** normal)) / div
+    let p = ray.origin + (ray.direction * (one * t))
+    if t <= 0
+        || (orthAB ** (p - a)) * dAB_C < 0
+        || (orthBC ** (p - b)) * dBC_A < 0
+        || (orthCA ** (p - c)) * dCA_B < 0 {
+      return nil
+    }
+    return Intersection(
+      point: p,
+      normal: (normal ** ray.direction) > 0 ? zero3 - normal : normal)
+  }
+  return Object(
+    material: material,
+    transf: id4,
+    revtr: id4,
+    ambient: black,
+    int: int)
+}
+
 struct Scene {
-  let camera: Camera
-  let objects: [Object]
-  let lights: [Light]
-  let height: Int
-  let width: Int
+  var camera: Camera
+  var objects: [Object]
+  var lights: [Light]
+  var height: Int
+  var width: Int
 
   func intersect(ray: Ray) -> (Intersection, Object)? {
     var result: (Double, Intersection, Object)? = nil
@@ -324,7 +383,12 @@ struct Scene {
           result = result + (color * attenuation) * (diff + shin)
         }
       }
-      // TODO: add mirror effect
+      if !object.material.specular.isBlack() {
+        let reflDir = ray.direction - int.normal * (2 * (int.normal ** ray.direction))
+        let reflRay = Ray(origin: int.point, direction: reflDir)
+        let reflColor = getColor(maxDepth: maxDepth-1, ray: reflRay)
+        result = result + (object.material.specular * reflColor)
+      }
       return result
     }
     return black
@@ -352,8 +416,42 @@ struct Scene {
   }
 }
 
-func parseInputFile(path: String) {
+struct Defaults {
+  var material: Material
+  var ambient: Color
+  var ver: [Vec3]
+  var vea: [Vec3]
+  var stack: [(Mat, Mat)]
+}
+
+func parseVec3(_ words: [Substring], _ offset: Int) -> Vec3 {
+  return Vec3(
+    x: Double(words[offset])!,
+    y: Double(words[offset + 1])!,
+    z: Double(words[offset + 2])!)
+}
+
+func parseColor(_ words: [Substring], _ offset: Int) -> Color {
+  return Color(
+    red: Double(words[offset])!,
+    green: Double(words[offset + 1])!,
+    blue: Double(words[offset + 2])!)
+}
+
+func parseSceneFile(path: String) -> Scene {
   let data = try! String(contentsOfFile: path, encoding: .utf8)
+  var scene = Scene(
+    camera: Camera(fov: 0, lookFrom: zero3, lookAt: zero3, up: zero3),
+    objects: [],
+    lights: [],
+    height: 0,
+    width: 0)
+  var defaults = Defaults(
+    material: Material(black),
+    ambient: black,
+    ver: [],
+    vea: [],
+    stack: [])
   for line in data.split(separator: "\n") {
     if line.isEmpty || line[line.startIndex] == "#" {
       continue
@@ -364,17 +462,62 @@ func parseInputFile(path: String) {
     }
     switch (words[0], words.count) {
       case ("size", 3):
-        let x = Int(words[1])!
-        let y = Int(words[2])!
+        scene.width = Int(words[1])!
+        scene.height = Int(words[2])!
+      case ("camera", 11):
+        scene.camera = Camera(
+          fov: Double(words[10])!,
+          lookFrom: parseVec3(words, 1),
+          lookAt: parseVec3(words, 4),
+          up: parseVec3(words, 7))
+      case ("directional", 7):
+        let dir = parseVec3(words, 1)
+        let color = parseColor(words, 4)
+        scene.lights.append(Light.directional(dir, color))
+      case ("point", 7):
+        let dir = parseVec3(words, 1)
+        let color = parseColor(words, 4)
+        scene.lights.append(Light.point(dir, color, 1, 0, 0))
+      case ("ambient", 4):
+        defaults.ambient = parseColor(words, 1)
+      case ("vertex", 4):
+        defaults.ver.append(parseVec3(words, 1))
+      case ("diffuse", 4):
+        defaults.material = Material(defaults.material, diffuse: parseColor(words, 1))
+      case ("emission", 4):
+        defaults.material = Material(defaults.material, emission: parseColor(words, 1))
+      case ("specular", 4):
+        defaults.material = Material(defaults.material, specular: parseColor(words, 1))
+      case ("shininess", 2):
+        defaults.material = Material(defaults.material, shininess: Double(words[1])!)
+      case ("sphere", 5):
+        let center = parseVec3(words, 1)
+        let r = Double(words[4])!
+        scene.objects.append(sphere(defaults.material, center, r))
+      case ("tri", 4):
+        assert(false, "Not implemented yet!")
+      case ("pushTransform", 1):
+        assert(false, "Not implemented yet!")
+      case ("popTransform", 1):
+        assert(false, "Not implemented yet!")
+      case ("scale", 4):
+        assert(false, "Not implemented yet!")
+      case ("translate", 4):
+        assert(false, "Not implemented yet!")
+      case ("rotate", 5):
+        assert(false, "Not implemented yet!")
       case _:
         print("Unable to parse line: " + line)
     }
   }
+  return scene
 }
 
 func main() {
   if CommandLine.arguments.count == 2 {
-    let input = parseInputFile(path: CommandLine.arguments[1])
+    let scene = parseSceneFile(path: CommandLine.arguments[1])
+    let image = scene.render(maxDepth: 1)
+    writePPM(filename: "out.ppm", image: image)
   } else {
     let camera = Camera(
       fov: 45,
