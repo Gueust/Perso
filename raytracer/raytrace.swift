@@ -324,7 +324,12 @@ struct Object {
 
 let one = 1 - 1e-10
 
-func sphere(_ material: Material, _ center: Vec3, _ r: Double, transf: Mat = id4, revtr: Mat = id4) -> Object {
+func sphere(_ material: Material,
+            _ center: Vec3,
+            _ r: Double,
+            transf: Mat = id4,
+            revtr: Mat = id4,
+            ambient: Color = black) -> Object {
   let int: (Ray) -> Intersection? = { (ray: Ray) in
     let orc = ray.origin - center
     let a = ray.direction ** ray.direction
@@ -350,11 +355,17 @@ func sphere(_ material: Material, _ center: Vec3, _ r: Double, transf: Mat = id4
     material: material,
     transf: transf,
     revtr: revtr,
-    ambient: black,
+    ambient: ambient,
     int: int)
 }
 
-func triangle(_ material: Material, _ a: Vec3, _ b: Vec3, _ c: Vec3, transf: Mat = id4, revtr: Mat = id4) -> Object {
+func triangle(_ material: Material,
+              _ a: Vec3,
+              _ b: Vec3,
+              _ c: Vec3,
+              transf: Mat = id4,
+              revtr: Mat = id4,
+              ambient: Color = black) -> Object {
   let normal = ((c - a) * (b - a)).normalize()
   let orthAB = (b - a) * normal
   let orthCA = (a - c) * normal
@@ -383,7 +394,7 @@ func triangle(_ material: Material, _ a: Vec3, _ b: Vec3, _ c: Vec3, transf: Mat
     material: material,
     transf: transf,
     revtr: revtr,
-    ambient: black,
+    ambient: ambient,
     int: int)
 }
 
@@ -538,13 +549,15 @@ func parseSceneFile(path: String) -> Scene {
         let center = parseVec3(words, 1)
         let r = Double(words[4])!
         let (transf, revtr) = defaults.stack.last!
-        scene.objects.append(sphere(defaults.material, center, r, transf: transf, revtr: revtr))
+        scene.objects.append(sphere(
+          defaults.material, center, r, transf: transf, revtr: revtr, ambient: defaults.ambient))
       case ("tri", 4):
         let a = defaults.ver[Int(words[1])!]
         let b = defaults.ver[Int(words[2])!]
         let c = defaults.ver[Int(words[3])!]
         let (transf, revtr) = defaults.stack.last!
-        scene.objects.append(triangle(defaults.material, a, b, c, transf: transf, revtr: revtr))
+        scene.objects.append(triangle(
+          defaults.material, a, b, c, transf: transf, revtr: revtr, ambient: defaults.ambient))
       case ("pushTransform", 1):
         defaults.stack.append(defaults.stack.last!)
       case ("popTransform", 1):
