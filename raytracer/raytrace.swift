@@ -149,7 +149,7 @@ func *(lhs: Mat, rhs: Mat) -> Mat {
   for i in 0..<dim1 {
     for j in 0..<dim3 {
       for k in 0..<dim2 {
-        result[i][j] += lhs[i][k] + rhs[k][j]
+        result[i][j] += lhs[i][k] * rhs[k][j]
       }
     }
   }
