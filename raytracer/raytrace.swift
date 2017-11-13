@@ -215,13 +215,13 @@ func rot4(_ axis: Vec3, _ deg: Double) -> Mat {
   let y = axis.y
   let z = axis.z
   mat[0][0] = cosT + (1 - cosT) * x * x
-  mat[0][1] = (1 - cosT) * x * y - z * sinT
-  mat[0][2] = (1 - cosT) * x * z + y * sinT
-  mat[1][0] = (1 - cosT) * x * y + z * sinT
+  mat[1][0] = (1 - cosT) * x * y - z * sinT
+  mat[2][0] = (1 - cosT) * x * z + y * sinT
+  mat[0][1] = (1 - cosT) * x * y + z * sinT
   mat[1][1] = cosT + (1 - cosT) * y * y
-  mat[1][2] = (1 - cosT) * y * z - x * sinT
-  mat[2][0] = (1 - cosT) * x * z - y * sinT
-  mat[2][1] = (1 - cosT) * y * z + x * sinT
+  mat[2][1] = (1 - cosT) * y * z - x * sinT
+  mat[0][2] = (1 - cosT) * x * z - y * sinT
+  mat[1][2] = (1 - cosT) * y * z + x * sinT
   mat[2][2] = cosT + (1 - cosT) * z * z
   mat[3][3] = 1
   return mat
@@ -586,7 +586,7 @@ func parseSceneFile(path: String) -> Scene {
 func main() {
   if CommandLine.arguments.count == 2 {
     let scene = parseSceneFile(path: CommandLine.arguments[1])
-    let image = scene.render(maxDepth: 1)
+    let image = scene.render(maxDepth: 5)
     writePPM(filename: "out.ppm", image: image)
   } else {
     let camera = Camera(
