@@ -186,6 +186,47 @@ func mult4p(_ a: Mat, _ v: Vec3) -> Vec3 {
     z: (a[2][0] * v.x + a[2][1] * v.y + a[2][2] * v.z + a[2][3]) / n)
 }
 
+func scale4(_ s1: Double, _ s2: Double, _ s3: Double) -> Mat {
+  var mat = zero(dim1: 4, dim2: 4)
+  mat[0][0] = s1
+  mat[1][1] = s2
+  mat[2][2] = s3
+  mat[3][3] = 1
+  return mat
+}
+
+func tr4(_ s1: Double, _ s2: Double, _ s3: Double) -> Mat {
+  var mat = zero(dim1: 4, dim2: 4)
+  mat[0][3] = s1
+  mat[1][3] = s2
+  mat[2][3] = s3
+  for i in 0..<4 {
+    mat[i][i] = 1
+  }
+  return mat
+}
+
+func rot4(_ axis: Vec3, _ deg: Double) -> Mat {
+  var mat = zero(dim1: 4, dim2: 4)
+  let rad = deg * Double.pi / 180
+  let cosT = cos(rad)
+  let sinT = sin(rad)
+  let x = axis.x
+  let y = axis.y
+  let z = axis.z
+  mat[0][0] = cosT + (1 - cosT) * x * x
+  mat[0][1] = (1 - cosT) * x * y - z * sinT
+  mat[0][2] = (1 - cosT) * x * z + y * sinT
+  mat[1][0] = (1 - cosT) * x * y + z * sinT
+  mat[1][1] = cosT + (1 - cosT) * y * y
+  mat[1][2] = (1 - cosT) * y * z - x * sinT
+  mat[2][0] = (1 - cosT) * x * z - y * sinT
+  mat[2][1] = (1 - cosT) * y * z + x * sinT
+  mat[2][2] = cosT + (1 - cosT) * z * z
+  mat[3][3] = 1
+  return mat
+}
+
 struct Material {
   let diffuse: Color
   let specular: Color
@@ -283,7 +324,7 @@ struct Object {
 
 let one = 1 - 1e-10
 
-func sphere(_ material: Material, _ center: Vec3, _ r: Double) -> Object {
+func sphere(_ material: Material, _ center: Vec3, _ r: Double, transf: Mat = id4, revtr: Mat = id4) -> Object {
   let int: (Ray) -> Intersection? = { (ray: Ray) in
     let orc = ray.origin - center
     let a = ray.direction ** ray.direction
@@ -307,13 +348,13 @@ func sphere(_ material: Material, _ center: Vec3, _ r: Double) -> Object {
   }
   return Object(
     material: material,
-    transf: id4,
-    revtr: id4,
+    transf: transf,
+    revtr: revtr,
     ambient: black,
     int: int)
 }
 
-func triangle(_ material: Material, _ a: Vec3, _ b: Vec3, _ c: Vec3) -> Object {
+func triangle(_ material: Material, _ a: Vec3, _ b: Vec3, _ c: Vec3, transf: Mat = id4, revtr: Mat = id4) -> Object {
   let normal = ((c - a) * (b - a)).normalize()
   let orthAB = (b - a) * normal
   let orthCA = (a - c) * normal
@@ -340,8 +381,8 @@ func triangle(_ material: Material, _ a: Vec3, _ b: Vec3, _ c: Vec3) -> Object {
   }
   return Object(
     material: material,
-    transf: id4,
-    revtr: id4,
+    transf: transf,
+    revtr: revtr,
     ambient: black,
     int: int)
 }
@@ -420,8 +461,12 @@ struct Defaults {
   var material: Material
   var ambient: Color
   var ver: [Vec3]
-  var vea: [Vec3]
   var stack: [(Mat, Mat)]
+
+  mutating func addTransform(_ m1: Mat, _ m2: Mat) {
+    let (prev1, prev2) = stack.popLast()!
+    stack.append((prev1 * m1, m2 * prev2))
+  }
 }
 
 func parseVec3(_ words: [Substring], _ offset: Int) -> Vec3 {
@@ -450,8 +495,7 @@ func parseSceneFile(path: String) -> Scene {
     material: Material(black),
     ambient: black,
     ver: [],
-    vea: [],
-    stack: [])
+    stack: [(id4, id4)])
   for line in data.split(separator: "\n") {
     if line.isEmpty || line[line.startIndex] == "#" {
       continue
@@ -493,19 +537,32 @@ func parseSceneFile(path: String) -> Scene {
       case ("sphere", 5):
         let center = parseVec3(words, 1)
         let r = Double(words[4])!
-        scene.objects.append(sphere(defaults.material, center, r))
+        let (transf, revtr) = defaults.stack.last!
+        scene.objects.append(sphere(defaults.material, center, r, transf: transf, revtr: revtr))
       case ("tri", 4):
-        assert(false, "Not implemented yet!")
+        let a = defaults.ver[Int(words[1])!]
+        let b = defaults.ver[Int(words[2])!]
+        let c = defaults.ver[Int(words[3])!]
+        let (transf, revtr) = defaults.stack.last!
+        scene.objects.append(triangle(defaults.material, a, b, c, transf: transf, revtr: revtr))
       case ("pushTransform", 1):
-        assert(false, "Not implemented yet!")
+        defaults.stack.append(defaults.stack.last!)
       case ("popTransform", 1):
-        assert(false, "Not implemented yet!")
+        let _ = defaults.stack.popLast()
       case ("scale", 4):
-        assert(false, "Not implemented yet!")
+        let sx = Double(words[1])!
+        let sy = Double(words[2])!
+        let sz = Double(words[3])!
+        defaults.addTransform(scale4(sx, sy, sz), scale4(1/sx, 1/sy, 1/sz))
       case ("translate", 4):
-        assert(false, "Not implemented yet!")
+        let sx = Double(words[1])!
+        let sy = Double(words[2])!
+        let sz = Double(words[3])!
+        defaults.addTransform(tr4(sx, sy, sz), tr4(-sx, -sy, -sz))
       case ("rotate", 5):
-        assert(false, "Not implemented yet!")
+        let axis = parseVec3(words, 1)
+        let deg = Double(words[4])!
+        defaults.addTransform(rot4(axis, -deg), rot4(axis, deg))
       case _:
         print("Unable to parse line: " + line)
     }
