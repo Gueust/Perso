@@ -278,18 +278,18 @@ enum Light {
   case point(Vec3, Color, Double, Double, Double)
   case directional(Vec3, Color)
 
-  func dir() -> Vec3 {
+  func dir(forPoint: Vec3) -> Vec3 {
     switch self {
-      case .point(let d, _, _, _, _): return d
+      case .point(let d, _, _, _, _): return d - forPoint
       case .directional(let d, _): return d
     }
   }
 
   func attenuation(forPoint: Vec3) -> (Double, Color) {
     switch self {
-    case .point(let p, let c, let c0, let c1, let c2):
-      let r = (forPoint - p).norm()
-      return (1.0 / (c0 + c1 * r + c2 * r * r), c)
+      case .point(let p, let c, let c0, let c1, let c2):
+        let r = (forPoint - p).norm()
+        return (1.0 / (c0 + c1 * r + c2 * r * r), c)
       case .directional(_, let color): return (1.0, color)
     }
   }
@@ -424,7 +424,7 @@ struct Scene {
     if maxDepth > 0, let (int, object) = intersect(ray: ray) {
       var result = object.ambient + object.material.emission
       for light in lights {
-        let dir = light.dir().normalize()
+        let dir = light.dir(forPoint: int.point).normalize()
         let lightRay = Ray(origin: int.point, direction: dir)
         if (intersect(ray: lightRay) == nil) {
           let (attenuation, color) = light.attenuation(forPoint: int.point)
