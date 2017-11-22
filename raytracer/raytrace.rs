@@ -1,6 +1,5 @@
 use std::fs::File;
 use std::io::prelude::*;
-use std::ops;
 
 struct Color {
     red: f64,
@@ -70,6 +69,21 @@ impl Vec3 {
         self.scale(1.0 / self.norm())
     }
 
+    fn mul(&self, rhs: &Vec3) -> Vec3 {
+        Vec3::new(
+            self.y * rhs.z - rhs.y * self.z,
+            self.z * rhs.x - rhs.z * self.x,
+            self.x * rhs.y - rhs.x * self.y)
+    }
+
+    fn add(&self, rhs: &Vec3) -> Vec3 {
+        Vec3::new(self.x + rhs.x, self.y + rhs.y, self.z + rhs.z)
+    }
+
+    fn sub(&self, rhs: &Vec3) -> Vec3 {
+        Vec3::new(self.x - rhs.x, self.y - rhs.y, self.z - rhs.z)
+    }
+
     const ZERO: Vec3 = Vec3 { x: 0.0, y: 0.0, z: 0.0 };
 }
 
@@ -92,9 +106,9 @@ struct Material {
     emission: Color,
 }
 
-struct Ray {
-    origin: Vec3,
-    direction: Vec3
+struct Ray<'a> {
+    origin: &'a Vec3,
+    direction: &'a Vec3
 }
 
 struct Intersection {
@@ -130,14 +144,32 @@ struct Scene {
     width: i64,
 }
 
+struct RenderFn<'a>(Box<Fn(i64, i64) -> Color + 'a>);
+
+
 impl Scene {
-    fn render_pixel(&self, i: i64, j: i64) -> Color {
-        Color::RED
+    fn render_pixel(&self) -> RenderFn {
+        let tany = f64::tan(self.camera.fov * std::f64::consts::PI / 360.0);
+        let width = self.width as f64 / 2.0;
+        let height = self.height as f64 / 2.0;
+        let tanx = tany * width / height;
+        let w = self.camera.look_from.sub(&self.camera.look_at).normalize();
+        let u = self.camera.up .mul(&w).normalize();
+        let v = w.mul(&u);
+        RenderFn(Box::new(move |i, j| {
+            let alpha = tanx * ((0.5 + j as f64) / width - 1.0);
+            let beta = tany * (1.0 - (0.5 + i as f64) / height);
+            let ray = Ray {
+                origin: &self.camera.look_from,
+                direction: &u.scale(alpha).add(&v.scale(beta)).sub(&w).normalize(),
+            };
+            Color::RED } ) )
     }
 
     fn render(&self) -> Image {
+        let RenderFn(ref render_pixel) = self.render_pixel();
         Image((0..self.height).map(|i|
-            (0..self.width).map(|j| self.render_pixel(i, j)
+            (0..self.width).map(|j| render_pixel(i, j)
         ).collect()).collect())
     }
 }
