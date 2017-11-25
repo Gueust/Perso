@@ -136,6 +136,17 @@ struct Material {
     emission: Color,
 }
 
+impl Material {
+    fn default(color: Color) -> Material {
+        Material {
+            diffuse: color,
+            specular: Color::BLACK,
+            shininess: 0.0,
+            emission: Color::BLACK,
+        }
+    }
+}
+
 struct Ray<'a> {
     origin: &'a Vec3,
     direction: &'a Vec3
@@ -159,6 +170,41 @@ struct Object {
     transf: Mat4,
     revtr: Mat4,
     ambient: Color,
+}
+
+impl Object {
+    fn sphere(material: Material, center: Vec3, r: f64) -> Object {
+        let intersect = move |ray: &Ray| {
+            let orc = ray.origin.sub(&center);
+            let a = ray.direction.dot(ray.direction);
+            let b = 2.0 * ray.direction.dot(&orc);
+            let c = orc.dot(&orc) - r * r;
+            let delta = b * b - 4.0 * a * c;
+            if delta < 0.0 {
+                return None;
+            }
+            let sqrt_delta = f64::sqrt(delta);
+            let t1 = (-b - sqrt_delta) / (2.0 * a);
+            let t2 = (-b + sqrt_delta) / (2.0 * a);
+            if t1 <= 0.0 && t2 <= 0.0 {
+                return None;
+            }
+            let t =
+                if t1 <= 0.0 { t2 }
+                else if t2 <= 0.0 { t1 }
+                else { f64::min(t1, t2) };
+            let p = ray.origin.add(&ray.direction.scale((1.0 - 1e-10) * t));
+            let normal = p.sub(&center).normalize();
+            Some(Intersection { point: p, normal: normal })
+        };
+        Object {
+            material: material,
+            transf: Mat4::id(),
+            revtr: Mat4::id(),
+            ambient: Color::BLACK,
+            intersect: Box::new(intersect),
+        }
+    }
 }
 
 enum Light {
@@ -222,7 +268,7 @@ impl Scene {
                         origin: &int.point,
                         direction: &dir,
                     };
-                    if self.intersect(ray).is_none() {
+                    if self.intersect(&light_ray).is_none() {
                         let (attenuation, color) = light.attenuation(&int.point);
                         let diff = object.material.diffuse
                             .scale(f64::max(0.0, int.normal.dot(&dir)));
@@ -286,9 +332,16 @@ fn main() {
         Light::Directional(Vec3 { x: -1.0, y: 1.0, z: 1.0 }, Color::WHITE),
         Light::Directional(Vec3 { x: -1.0, y: -1.0, z: 1.0 }, Color::WHITE),
     ];
+    let objects = vec![
+        Object::sphere(Material::default(Color::RED), Vec3::ZERO, 1.0),
+        Object::sphere(
+            Material::default(Color::GREEN),
+            Vec3::new(1.0, 0.1, 0.1),
+            0.2),
+    ];
     let scene = Scene {
         camera: camera,
-        objects: vec![],
+        objects: objects,
         lights: lights,
         width: 640,
         height: 480,
