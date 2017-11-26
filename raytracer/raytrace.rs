@@ -9,10 +9,6 @@ struct Color {
 }
 
 impl Color {
-    fn new(red: f64, green: f64, blue: f64) -> Color {
-        Color { red: red, green: green, blue: blue }
-    }
-
     fn to_bytes(&self) -> [u8; 3] {
         let to_u8 = |f: f64| (f * 255.0) as u8;
         [ to_u8(self.red), to_u8(self.green), to_u8(self.blue) ]
@@ -199,6 +195,43 @@ impl Shape for Sphere {
     }
 }
 
+struct Triangle {
+    a: Vec3,
+    b: Vec3,
+    c: Vec3,
+    normal: Vec3,
+    orth_ab: Vec3,
+    orth_bc: Vec3,
+    orth_ca: Vec3,
+    d_ab_c: f64,
+    d_bc_a: f64,
+    d_ca_b: f64,
+}
+
+impl Shape for Triangle {
+    fn intersect(&self, ray: &Ray) -> Option<Intersection> {
+        let div = ray.direction.dot(&self.normal);
+        if f64::abs(div) < 1e-10 {
+            return None;
+        }
+        let t = (self.a.dot(&self.normal) - ray.origin.dot(&self.normal)) / div;
+        let point = ray.origin.add(&ray.direction.scale(t * (1.0 + 1e-10)));
+        if t <= 0.0
+            || self.orth_ab.dot(&point.sub(&self.a)) * self.d_ab_c < 0.0
+            || self.orth_bc.dot(&point.sub(&self.b)) * self.d_bc_a < 0.0
+            || self.orth_ca.dot(&point.sub(&self.c)) * self.d_ca_b < 0.0 {
+            return None;
+        }
+        let normal =
+            if self.normal.dot(&ray.direction) > 0.0 {
+                Vec3::ZERO.sub(&self.normal)
+            } else {
+                self.normal.clone()
+            };
+        Some(Intersection { point: point, normal: normal } )
+    }
+}
+
 struct Object {
     shape: Box<Shape>,
     material: Material,
@@ -215,6 +248,35 @@ impl Object {
             revtr: Mat4::id(),
             ambient: Color::BLACK,
             shape: Box::new(Sphere { center: center, radius: radius }),
+        }
+    }
+
+    fn triangle(material: Material, a: Vec3, b: Vec3, c: Vec3) -> Object {
+        let normal = c.sub(&a).mul(&b.sub(&a)).normalize();
+        let orth_ab = b.sub(&a).mul(&normal);
+        let orth_ca = a.sub(&c).mul(&normal);
+        let orth_bc = c.sub(&b).mul(&normal);
+        let d_ab_c = orth_ab.dot(&c.sub(&a));
+        let d_bc_a = orth_bc.dot(&a.sub(&b));
+        let d_ca_b = orth_ca.dot(&b.sub(&c));
+        let triangle = Triangle {
+            a: a,
+            b: b,
+            c: c,
+            normal: normal,
+            orth_ab: orth_ab,
+            orth_ca: orth_ca,
+            orth_bc: orth_bc,
+            d_ab_c: d_ab_c,
+            d_bc_a: d_bc_a,
+            d_ca_b: d_ca_b,
+        };
+        Object {
+            material: material,
+            transf: Mat4::id(),
+            revtr: Mat4::id(),
+            ambient: Color::BLACK,
+            shape: Box::new(triangle),
         }
     }
 }
