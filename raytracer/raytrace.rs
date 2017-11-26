@@ -164,8 +164,43 @@ struct Camera {
     fov: f64,
 }
 
+trait Shape {
+    fn intersect(&self, ray: &Ray) -> Option<Intersection>;
+}
+
+struct Sphere {
+    center: Vec3,
+    radius: f64,
+}
+
+impl Shape for Sphere {
+    fn intersect(&self, ray: &Ray) -> Option<Intersection> {
+        let orc = ray.origin.sub(&self.center);
+        let a = ray.direction.dot(ray.direction);
+        let b = 2.0 * ray.direction.dot(&orc);
+        let c = orc.dot(&orc) - self.radius * self.radius;
+        let delta = b * b - 4.0 * a * c;
+        if delta < 0.0 {
+            return None;
+        }
+        let sqrt_delta = f64::sqrt(delta);
+        let t1 = (-b - sqrt_delta) / (2.0 * a);
+        let t2 = (-b + sqrt_delta) / (2.0 * a);
+        if t1 <= 0.0 && t2 <= 0.0 {
+            return None;
+        }
+        let t =
+            if t1 <= 0.0 { t2 }
+            else if t2 <= 0.0 { t1 }
+            else { f64::min(t1, t2) };
+        let p = ray.origin.add(&ray.direction.scale((1.0 - 1e-10) * t));
+        let normal = p.sub(&self.center).normalize();
+        Some(Intersection { point: p, normal: normal })
+    }
+}
+
 struct Object {
-    intersect: Box<Fn(&Ray) -> Option<Intersection>>,
+    shape: Box<Shape>,
     material: Material,
     transf: Mat4,
     revtr: Mat4,
@@ -173,36 +208,13 @@ struct Object {
 }
 
 impl Object {
-    fn sphere(material: Material, center: Vec3, r: f64) -> Object {
-        let intersect = move |ray: &Ray| {
-            let orc = ray.origin.sub(&center);
-            let a = ray.direction.dot(ray.direction);
-            let b = 2.0 * ray.direction.dot(&orc);
-            let c = orc.dot(&orc) - r * r;
-            let delta = b * b - 4.0 * a * c;
-            if delta < 0.0 {
-                return None;
-            }
-            let sqrt_delta = f64::sqrt(delta);
-            let t1 = (-b - sqrt_delta) / (2.0 * a);
-            let t2 = (-b + sqrt_delta) / (2.0 * a);
-            if t1 <= 0.0 && t2 <= 0.0 {
-                return None;
-            }
-            let t =
-                if t1 <= 0.0 { t2 }
-                else if t2 <= 0.0 { t1 }
-                else { f64::min(t1, t2) };
-            let p = ray.origin.add(&ray.direction.scale((1.0 - 1e-10) * t));
-            let normal = p.sub(&center).normalize();
-            Some(Intersection { point: p, normal: normal })
-        };
+    fn sphere(material: Material, center: Vec3, radius: f64) -> Object {
         Object {
             material: material,
             transf: Mat4::id(),
             revtr: Mat4::id(),
             ambient: Color::BLACK,
-            intersect: Box::new(intersect),
+            shape: Box::new(Sphere { center: center, radius: radius }),
         }
     }
 }
@@ -245,7 +257,7 @@ struct RenderFn<'a>(Box<Fn(i64, i64) -> Color + 'a>);
 impl Scene {
     fn intersect(&self, ray: &Ray) -> Option<(Intersection, &Object)> {
         self.objects.iter().fold(None, |acc, object| {
-            match (object.intersect)(ray) {
+            match object.shape.intersect(ray) {
                 None => acc,
                 Some(int) => {
                     let d = int.point.sub(&ray.origin).norm();
@@ -329,7 +341,7 @@ fn main() {
         fov: 45.0,
     };
     let lights = vec![
-        Light::Directional(Vec3 { x: -1.0, y: 1.0, z: 1.0 }, Color::WHITE),
+        Light::Directional(Vec3 { x: 1.0, y: 1.0, z: 1.0 }, Color::WHITE),
         Light::Directional(Vec3 { x: -1.0, y: -1.0, z: 1.0 }, Color::WHITE),
     ];
     let objects = vec![
