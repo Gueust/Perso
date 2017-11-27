@@ -313,9 +313,6 @@ struct Scene {
     width: i64,
 }
 
-struct RenderFn<'a>(Box<Fn(i64, i64) -> Color + 'a>);
-
-
 impl Scene {
     fn intersect(&self, ray: &Ray) -> Option<(Intersection, &Object)> {
         self.objects.iter().fold(None, |acc, object| {
@@ -369,7 +366,7 @@ impl Scene {
         }
     }
 
-    fn render_pixel(&self) -> RenderFn {
+    fn render(&self) -> Image {
         let tany = f64::tan(self.camera.fov * std::f64::consts::PI / 360.0);
         let width = self.width as f64 / 2.0;
         let height = self.height as f64 / 2.0;
@@ -377,21 +374,15 @@ impl Scene {
         let w = self.camera.look_from.sub(&self.camera.look_at).normalize();
         let u = self.camera.up .mul(&w).normalize();
         let v = w.mul(&u);
-        RenderFn(Box::new(move |i, j| {
+        Image((0..self.height).map(|i| (0..self.width).map(|j| {
             let alpha = tanx * ((0.5 + j as f64) / width - 1.0);
             let beta = tany * (1.0 - (0.5 + i as f64) / height);
             let ray = Ray {
                 origin: &self.camera.look_from,
                 direction: &u.scale(alpha).add(&v.scale(beta)).sub(&w).normalize(),
             };
-            self.get_color(5, &ray) } ) )
-    }
-
-    fn render(&self) -> Image {
-        let RenderFn(ref render_pixel) = self.render_pixel();
-        Image((0..self.height).map(|i|
-            (0..self.width).map(|j| render_pixel(i, j)
-        ).collect()).collect())
+            self.get_color(5, &ray)
+        } ).collect()).collect())
     }
 }
 
