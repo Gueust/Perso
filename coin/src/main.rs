@@ -54,15 +54,79 @@ enum Side {
     Sell,
 }
 
-fn side_of_str(str : &str) -> Option<Side> {
-    if str == "buy" { Some(Side::Buy) }
-    else if str == "sell" { Some(Side::Sell) }
-    else { None }
+impl Side {
+    fn of_str(str : &str) -> Result<Side, String> {
+        match str {
+            "buy" => Ok(Side::Buy),
+            "sell" => Ok(Side::Sell),
+            _ => Err(format!("unknown side {}", str)),
+        }
+    }
+}
+
+// Price encoded as int with 6 digits.
+#[derive(PartialEq, Eq, PartialOrd, Ord)]
+struct Price(i64);
+
+impl Price {
+    // Assumes ascii encoding and non-negative prices.
+    fn parse_str(str: &str) -> Result<Price, String> {
+        let mut pre_dot: i64 = 0;
+        let mut seen_dot = false;
+        let mut post_dot: i64 = 0;
+        let mut post_dot_cnt: i64 = 0;
+        for c in str.chars() {
+            if c == '.' {
+                seen_dot = true;
+                continue
+            }
+            if c < '0' || c > '9' {
+                Err(format!("unable to parse as price {}", str))?
+            }
+            let digit = match c.to_digit(10) {
+                Some(digit) => digit as i64,
+                None => Err(format!("unable to parse as price {}", str))?
+            };
+            if seen_dot {
+                if post_dot_cnt < 6 {
+                    post_dot = 10 * post_dot + digit;
+                    post_dot_cnt += 1;
+                } else {
+                    if digit != 0 {
+                        Err(format!("unable to parse as price (too many digits) {}", str))?
+                    }
+                }
+            } else {
+                pre_dot = 10 * pre_dot + digit;
+            }
+        }
+        for c in post_dot_cnt..6 {
+            post_dot *= 10;
+        }
+        Ok(Price(pre_dot * 1_000_000 + post_dot))
+    }
+
+    fn to_float(&self) -> f64 {
+        let &Price(p) = self;
+        p as f64 / 1e6
+    }
+}
+
+impl std::fmt::Display for Price {
+    fn fmt(&self, f: &mut std::fmt::Formatter) -> std::fmt::Result {
+        self.to_float().fmt(f)
+    }
+}
+
+impl std::fmt::Debug for Price {
+    fn fmt(&self, f: &mut std::fmt::Formatter) -> std::fmt::Result {
+        self.to_float().fmt(f)
+    }
 }
 
 struct BookProcessor {
-    bid_sizes : BTreeMap< i64, f64 >,
-    ask_sizes : BTreeMap< i64, f64 >,
+    bid_sizes : BTreeMap< Price, f64 >,
+    ask_sizes : BTreeMap< Price, f64 >,
     total_bid_size : f64,
     total_ask_size : f64,
     pre_snapshot: bool,
@@ -97,7 +161,7 @@ impl BookProcessor {
             best_ask);
     }
 
-    fn update(&mut self, side: Side, price: i64, size: f64) {
+    fn update(&mut self, side: Side, price: Price, size: f64) {
         if self.pre_snapshot {
             return;
         }
@@ -163,12 +227,6 @@ impl JsonProcessor {
         }
     }
 
-    fn parse_price(s: &str) -> Result<i64, String> {
-        let res: Result<f64, _> = s.parse();
-        let res = res.map_err(|e| e.to_string());
-        Ok((res? * 1_000_000.0) as i64)
-    }
-
     fn parse_size(s: &str) -> Result<f64, String> {
         let res: Result<f64, _> = s.parse();
         res.map_err(|e| e.to_string())
@@ -213,19 +271,16 @@ impl MessageProcessor for JsonProcessor {
             MessageType::Error => {
                 let error: Error = serde_json::from_value(json)
                     .map_err(|e| e.to_string())?;
-                println!("error: {:?}", error)
+                error!("error: {:?}", error)
             },
             MessageType::L2update => {
                 let l2update: L2update = serde_json::from_value(json)
                     .map_err(|e| e.to_string())?;
                 let mut book_processor = self.book_processor.borrow_mut();
                 for &(ref side, ref price, ref size) in l2update.changes.iter() {
-                    let price = JsonProcessor::parse_price(price)?;
+                    let price = Price::parse_str(price)?;
                     let size = JsonProcessor::parse_size(size)?;
-                    let side = match side_of_str(side) {
-                        Some(side) => side,
-                        None => Err(format!("unable to parse side {}", side))?
-                    };
+                    let side = Side::of_str(side)?;
                     book_processor.update(side, price, size)
                 }
             },
@@ -236,12 +291,12 @@ impl MessageProcessor for JsonProcessor {
                 let mut book_processor = self.book_processor.borrow_mut();
                 book_processor.clear_on_snapshot();
                 for &(ref price, ref size) in snapshot.bids.iter() {
-                    let price = JsonProcessor::parse_price(price)?;
+                    let price = Price::parse_str(price)?;
                     let size = JsonProcessor::parse_size(size)?;
                     book_processor.update(Side::Buy, price, size);
                 }
                 for &(ref price, ref size) in snapshot.asks.iter() {
-                    let price = JsonProcessor::parse_price(price)?;
+                    let price = Price::parse_str(price)?;
                     let size = JsonProcessor::parse_size(size)?;
                     book_processor.update(Side::Sell, price, size);
                 }
@@ -249,7 +304,7 @@ impl MessageProcessor for JsonProcessor {
             MessageType::Subscriptions => {
                 let subscriptions: Subscriptions = serde_json::from_value(json)
                     .map_err(|e| e.to_string())?;
-                println!("subscriptions: {:?}", subscriptions)
+                info!("subscriptions: {:?}", subscriptions)
             },
             MessageType::Heartbeat => {
                 let heartbeat: Heartbeat = serde_json::from_value(json)
