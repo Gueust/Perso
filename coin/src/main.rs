@@ -9,6 +9,17 @@ extern crate serde;
 use std::cell::RefCell;
 use std::collections::BTreeMap;
 
+enum Side {
+    Buy,
+    Sell,
+}
+
+fn side_of_str(str : &str) -> Option<Side> {
+    if str == "buy" { Some(Side::Buy) }
+    else if str == "sell" { Some(Side::Sell) }
+    else { None }
+}
+
 struct BookProcessor {
     bid_sizes : BTreeMap< i64, f64 >,
     ask_sizes : BTreeMap< i64, f64 >,
@@ -37,29 +48,27 @@ impl BookProcessor {
     }
 
     fn log_summary(&self) {
-        info!("bid/ask levels {}/{}", self.bid_sizes.len(), self.ask_sizes.len());
-        info!("bid/ask sizes {}/{}", self.total_bid_size, self.total_ask_size);
+        let best_bid = self.bid_sizes.iter().next_back();
+        let best_ask = self.ask_sizes.iter().next();
+        info!("bid/ask levels {}/{}: {:?} {:?}",
+            self.bid_sizes.len(),
+            self.ask_sizes.len(),
+            best_bid,
+            best_ask);
     }
 
-    fn update_bid(&mut self, price: i64, size: f64) {
+    fn update(&mut self, side: Side, price: i64, size: f64) {
         if self.pre_snapshot {
             return;
         }
+        let ref mut to_update = match side {
+            Side::Buy => &mut self.bid_sizes,
+            Side::Sell => &mut self.ask_sizes,
+        };
         if size == 0.0 {
-            self.bid_sizes.remove(&price);
+            to_update.remove(&price);
         } else {
-            self.bid_sizes.insert(price, size);
-        }
-    }
-
-    fn update_ask(&mut self, price: i64, size: f64) {
-        if self.pre_snapshot {
-            return;
-        }
-        if size == 0.0 {
-            self.ask_sizes.remove(&price);
-        } else {
-            self.ask_sizes.insert(price, size);
+            to_update.insert(price, size);
         }
     }
 }
@@ -171,17 +180,11 @@ impl JsonProcessor {
                 for &(ref side, ref price, ref size) in l2update.changes.iter() {
                     let price = JsonProcessor::parse_price(price)?;
                     let size = JsonProcessor::parse_size(size)?;
-                    match side.as_str() {
-                        "buy" => {
-                            book_processor.update_bid(price, size)
-                        },
-                        "sell" => {
-                            book_processor.update_ask(price, size)
-                        },
-                        _ => {
-                            Err(format!("unexpected side {}", side))?
-                        }
-                    }
+                    let side = match side_of_str(side) {
+                        Some(side) => side,
+                        None => Err(format!("unable to parse side {}", side))?
+                    };
+                    book_processor.update(side, price, size)
                 }
             },
             MessageType::Snapshot => {
@@ -193,12 +196,12 @@ impl JsonProcessor {
                 for &(ref price, ref size) in snapshot.bids.iter() {
                     let price = JsonProcessor::parse_price(price)?;
                     let size = JsonProcessor::parse_size(size)?;
-                    book_processor.update_bid(price, size);
+                    book_processor.update(Side::Buy, price, size);
                 }
                 for &(ref price, ref size) in snapshot.asks.iter() {
                     let price = JsonProcessor::parse_price(price)?;
                     let size = JsonProcessor::parse_size(size)?;
-                    book_processor.update_ask(price, size);
+                    book_processor.update(Side::Sell, price, size);
                 }
             },
             MessageType::Subscriptions => {
