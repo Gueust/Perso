@@ -8,6 +8,46 @@ extern crate serde;
 
 use std::cell::RefCell;
 use std::collections::BTreeMap;
+use std::env;
+use std::io::{BufRead, BufReader, Write};
+use std::fs::File;
+
+trait MessageProcessor {
+    fn on_message(&self, &str) -> Result<(), String>;
+}
+
+enum Logger {
+    File(RefCell<File>),
+    Stdout,
+}
+
+impl Logger {
+    fn new(filename: &str) -> Result<Logger, std::io::Error> {
+        if filename == "stdout" {
+            Ok(Logger::Stdout)
+        } else {
+            let file = File::create(filename)?;
+            Ok(Logger::File(RefCell::new(file)))
+        }
+    }
+}
+
+impl MessageProcessor for Logger {
+    fn on_message(&self, message: &str) -> Result<(), String> {
+        match self {
+            &Logger::File(ref file) => {
+                file.borrow_mut().write_all(message.as_bytes())
+                    .map_err(|e| e.to_string())?;
+                file.borrow_mut().write_all(b"\n")
+                    .map_err(|e| e.to_string())?;
+            },
+            &Logger::Stdout => {
+                print!("{}\n", message);
+            },
+        }
+        Ok(())
+    }
+}
 
 enum Side {
     Buy,
@@ -163,7 +203,9 @@ impl JsonProcessor {
             },
         }
     }
+}
 
+impl MessageProcessor for JsonProcessor {
     fn on_message(&self, msg: &str) -> Result<(), String> {
         let json: serde_json::Value = serde_json::from_str(&msg)
             .map_err(|e| e.to_string())?;
@@ -219,7 +261,7 @@ impl JsonProcessor {
     }
 }
 
-fn connect(json_processor: &JsonProcessor, address: &str) -> Result<(), ws::Error> {
+fn connect(processor: &MessageProcessor, address: &str) -> Result<(), ws::Error> {
     let subscribe_message = r#"{"type": "subscribe", "product_ids": ["BTC-USD"], "channels": ["level2", "heartbeat"]}"#;
     ws::connect(address, |out| {
         out.send(subscribe_message).unwrap();
@@ -231,7 +273,7 @@ fn connect(json_processor: &JsonProcessor, address: &str) -> Result<(), ws::Erro
                     error!("unexpected binary message {:?}", vec);
                 }
                 ws::Message::Text(msg) => {
-                    match json_processor.on_message(&msg) {
+                    match processor.on_message(&msg) {
                         Ok(()) => {
                         }
                         Err(error) => {
@@ -245,9 +287,42 @@ fn connect(json_processor: &JsonProcessor, address: &str) -> Result<(), ws::Erro
     })
 }
 
+fn replay(processor: &MessageProcessor, filename: &str) -> Result<(), std::io::Error> {
+    let file = File::open(filename)?;
+    let buf_reader = BufReader::new(file);
+    for line in buf_reader.lines() {
+        let line = line?;
+        match processor.on_message(&line) {
+            Ok(()) => (),
+            Err(e) => error!("Error when parsing message {}", e),
+        }
+    }
+    Ok(())
+}
+
 fn main() {
     env_logger::init().unwrap();
-    let mut json_processor = JsonProcessor::new();
-    connect(&mut json_processor, "wss://ws-feed.gdax.com").unwrap();
-    println!("Done!");
+    let args: Vec<_> = env::args().collect();
+    if args.len() <= 1 {
+        println!("Usage: {} real-time|log|replay", args[0]);
+        return
+    }
+    if args[1] == "real-time" {
+        let mut json_processor = JsonProcessor::new();
+        connect(&mut json_processor, "wss://ws-feed.gdax.com").unwrap();
+    } else if args[1] == "log" {
+        if args.len() <= 2 {
+            println!("Usage: {} log filename", args[0]);
+            return
+        }
+        let mut logger = Logger::new(&args[2]).unwrap();
+        connect(&mut logger, "wss://ws-feed.gdax.com").unwrap();
+    } else if args[1] == "replay" {
+        if args.len() <= 2 {
+            println!("Usage: {} replay filename", args[0]);
+            return
+        }
+        let mut json_processor = JsonProcessor::new();
+        replay(&mut json_processor, &args[2]).unwrap();
+    }
 }
