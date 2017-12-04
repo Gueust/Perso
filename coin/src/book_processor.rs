@@ -8,9 +8,12 @@ pub struct BookProcessor {
     ask_sizes : BTreeMap< Price, f64 >,
     total_bid_size : f64,
     total_ask_size : f64,
-    pre_snapshot: bool,
 }
 
+// TODO: staleness checks.
+// TODO: take the product name as argument + assert that it is correct.
+// TODO: on_initial_snapshot_done.
+// TODO: on_error (call clear_on_snapshot).
 impl BookProcessor {
     pub fn new() -> BookProcessor {
         BookProcessor {
@@ -18,7 +21,6 @@ impl BookProcessor {
             ask_sizes: BTreeMap::new(),
             total_bid_size: 0.0,
             total_ask_size: 0.0,
-            pre_snapshot: false,
         }
     }
 
@@ -27,7 +29,6 @@ impl BookProcessor {
         self.ask_sizes.clear();
         self.total_bid_size = 0.0;
         self.total_ask_size = 0.0;
-        self.pre_snapshot = false;
     }
 
     pub fn log_summary(&self) {
@@ -40,10 +41,7 @@ impl BookProcessor {
             best_ask);
     }
 
-    pub fn update(&mut self, side: Side, price: Price, size: f64) {
-        if self.pre_snapshot {
-            return;
-        }
+    pub fn on_update(&mut self, side: Side, price: Price, size: f64) {
         let ref mut to_update = match side {
             Side::Buy => &mut self.bid_sizes,
             Side::Sell => &mut self.ask_sizes,

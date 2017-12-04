@@ -17,7 +17,7 @@ mod book_processor;
 mod message_processor;
 use message_processor::MessageProcessor;
 mod gdax;
-use gdax::JsonProcessor;
+mod gemini;
 
 enum LoggerKind {
     File(RefCell<File>),
@@ -110,22 +110,25 @@ fn main() {
         println!("Usage: {} real-time|log|replay", args[0]);
         return
     }
-    if args[1] == "real-time" {
-        let mut json_processor = JsonProcessor::new();
+    if args[1] == "real-time-gdax" {
+        let mut json_processor = gdax::JsonProcessor::new();
         connect(&mut json_processor, "wss://ws-feed.gdax.com").unwrap();
-    } else if args[1] == "log" {
+    } else if args[1] == "real-time-gemini" {
+        let mut json_processor = gemini::JsonProcessor::new();
+        connect(&mut json_processor, "wss://api.gemini.com/v1/marketdata/btcusd").unwrap();
+    } else if args[1] == "log-gdax" {
         if args.len() <= 2 {
             println!("Usage: {} log filename", args[0]);
             return
         }
-        let mut logger = Logger::new(&args[2], JsonProcessor::subscribe_message()).unwrap();
+        let mut logger = Logger::new(&args[2], gdax::JsonProcessor::subscribe_message()).unwrap();
         connect(&mut logger, "wss://ws-feed.gdax.com").unwrap();
-    } else if args[1] == "replay" {
+    } else if args[1] == "replay-gdax" {
         if args.len() <= 2 {
             println!("Usage: {} replay filename", args[0]);
             return
         }
-        let mut json_processor = JsonProcessor::new();
+        let mut json_processor = gdax::JsonProcessor::new();
         replay(&mut json_processor, &args[2]).unwrap();
     }
 }

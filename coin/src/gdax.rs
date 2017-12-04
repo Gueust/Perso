@@ -118,7 +118,7 @@ impl MessageProcessor for JsonProcessor {
                     let price = Price::parse_str(price)?;
                     let size = JsonProcessor::parse_size(size)?;
                     let side = Side::of_str(side)?;
-                    book_processor.update(side, price, size)
+                    book_processor.on_update(side, price, size)
                 }
             },
             MessageType::Snapshot => {
@@ -130,12 +130,12 @@ impl MessageProcessor for JsonProcessor {
                 for &(ref price, ref size) in snapshot.bids.iter() {
                     let price = Price::parse_str(price)?;
                     let size = JsonProcessor::parse_size(size)?;
-                    book_processor.update(Side::Buy, price, size);
+                    book_processor.on_update(Side::Buy, price, size);
                 }
                 for &(ref price, ref size) in snapshot.asks.iter() {
                     let price = Price::parse_str(price)?;
                     let size = JsonProcessor::parse_size(size)?;
-                    book_processor.update(Side::Sell, price, size);
+                    book_processor.on_update(Side::Sell, price, size);
                 }
             },
             MessageType::Subscriptions => {
