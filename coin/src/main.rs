@@ -1,52 +1,61 @@
 extern crate ws;
 extern crate env_logger;
-extern crate serde;
 
 #[macro_use] extern crate log;
+extern crate serde;
 #[macro_use] extern crate serde_derive;
 #[macro_use] extern crate serde_json;
 
 use std::cell::RefCell;
-use std::collections::BTreeMap;
 use std::env;
 use std::io::{BufRead, BufReader, Write};
 use std::fs::File;
 
 mod side;
-use side::Side;
 mod price;
-use price::Price;
+mod book_processor;
+mod message_processor;
+use message_processor::MessageProcessor;
+mod gdax;
+use gdax::JsonProcessor;
 
-trait MessageProcessor {
-    fn on_message(&self, &str) -> Result<(), String>;
-}
-
-enum Logger {
+enum LoggerKind {
     File(RefCell<File>),
     Stdout,
 }
 
+struct Logger {
+    kind: LoggerKind,
+    subscribe_message: Option<String>,
+}
+
 impl Logger {
-    fn new(filename: &str) -> Result<Logger, std::io::Error> {
-        if filename == "stdout" {
-            Ok(Logger::Stdout)
-        } else {
-            let file = File::create(filename)?;
-            Ok(Logger::File(RefCell::new(file)))
-        }
+    fn new(filename: &str, subscribe_message: Option<String>) -> Result<Logger, std::io::Error> {
+        let kind =
+            if filename == "stdout" {
+                LoggerKind::Stdout
+            } else {
+                let file = File::create(filename)?;
+                LoggerKind::File(RefCell::new(file))
+            };
+        Ok(Logger { kind: kind, subscribe_message: subscribe_message })
     }
 }
 
 impl MessageProcessor for Logger {
+    fn subscribe_message(&self) -> Option<String> {
+        self.subscribe_message.clone()
+    }
+
     fn on_message(&self, message: &str) -> Result<(), String> {
-        match self {
-            &Logger::File(ref file) => {
+        match self.kind {
+            LoggerKind::File(ref file) => {
                 file.borrow_mut().write_all(message.as_bytes())
                     .map_err(|e| e.to_string())?;
                 file.borrow_mut().write_all(b"\n")
                     .map_err(|e| e.to_string())?;
             },
-            &Logger::Stdout => {
+            LoggerKind::Stdout => {
                 print!("{}\n", message);
             },
         }
@@ -54,203 +63,12 @@ impl MessageProcessor for Logger {
     }
 }
 
-struct BookProcessor {
-    bid_sizes : BTreeMap< Price, f64 >,
-    ask_sizes : BTreeMap< Price, f64 >,
-    total_bid_size : f64,
-    total_ask_size : f64,
-    pre_snapshot: bool,
-}
-
-impl BookProcessor {
-    fn new() -> BookProcessor {
-        BookProcessor {
-            bid_sizes: BTreeMap::new(),
-            ask_sizes: BTreeMap::new(),
-            total_bid_size: 0.0,
-            total_ask_size: 0.0,
-            pre_snapshot: false,
-        }
-    }
-
-    fn clear_on_snapshot(&mut self) {
-        self.bid_sizes.clear();
-        self.ask_sizes.clear();
-        self.total_bid_size = 0.0;
-        self.total_ask_size = 0.0;
-        self.pre_snapshot = false;
-    }
-
-    fn log_summary(&self) {
-        let best_bid = self.bid_sizes.iter().next_back();
-        let best_ask = self.ask_sizes.iter().next();
-        info!("bid/ask levels {}/{}: {:?} {:?}",
-            self.bid_sizes.len(),
-            self.ask_sizes.len(),
-            best_bid,
-            best_ask);
-    }
-
-    fn update(&mut self, side: Side, price: Price, size: f64) {
-        if self.pre_snapshot {
-            return;
-        }
-        let ref mut to_update = match side {
-            Side::Buy => &mut self.bid_sizes,
-            Side::Sell => &mut self.ask_sizes,
-        };
-        if size == 0.0 {
-            to_update.remove(&price);
-        } else {
-            to_update.insert(price, size);
-        }
-    }
-}
-
-#[derive(Debug, Serialize, Deserialize)]
-struct Error {
-    message: String,
-}
-
-#[derive(Debug, Serialize, Deserialize)]
-struct L2update {
-    product_id: String,
-    changes: Vec<(String, String, String)>,
-}
-
-#[derive(Debug, Serialize, Deserialize)]
-struct Subscriptions {
-}
-
-#[derive(Debug, Serialize, Deserialize)]
-struct Snapshot {
-    product_id: String,
-    bids: Vec<(String, String)>,
-    asks: Vec<(String, String)>,
-}
-
-#[derive(Debug, Serialize, Deserialize)]
-struct Heartbeat {
-    product_id: String,
-    last_trade_id: i64,
-    sequence: i64,
-    time: String,
-}
-
-enum MessageType {
-    Error,
-    L2update,
-    Snapshot,
-    Subscriptions,
-    Heartbeat,
-}
-
-struct JsonProcessor {
-    // Assumes a single product for now.
-    book_processor: RefCell<BookProcessor>,
-}
-
-impl JsonProcessor {
-    fn new() -> JsonProcessor {
-        JsonProcessor {
-            book_processor: RefCell::new(BookProcessor::new()),
-        }
-    }
-
-    fn parse_size(s: &str) -> Result<f64, String> {
-        let res: Result<f64, _> = s.parse();
-        res.map_err(|e| e.to_string())
-    }
-
-    fn message_type(&self, json: &serde_json::Value) -> Result<MessageType, String> {
-        match json {
-            &serde_json::Value::Object(ref map) => {
-                match map.get("type") {
-                    Some(&serde_json::Value::String(ref message_type)) => {
-                        match message_type.as_str() {
-                            "heartbeat" => Ok(MessageType::Heartbeat),
-                            "error" => Ok(MessageType::Error),
-                            "l2update" => Ok(MessageType::L2update),
-                            "snapshot" => Ok(MessageType::Snapshot),
-                            "subscriptions" => Ok(MessageType::Subscriptions),
-                            _ => {
-                                Err(format!("unexpected type {}", message_type))
-                            }
-                        }
-                    }
-                    Some(_) => {
-                        Err("json message has unexpected type".to_string())
-                    }
-                    None => {
-                        Err("json message has missing type".to_string())
-                    }
-                }
-            }
-            _ => {
-                Err("json message is not an object".to_string())
-            },
-        }
-    }
-}
-
-impl MessageProcessor for JsonProcessor {
-    fn on_message(&self, msg: &str) -> Result<(), String> {
-        let json: serde_json::Value = serde_json::from_str(&msg)
-            .map_err(|e| e.to_string())?;
-        match self.message_type(&json)? {
-            MessageType::Error => {
-                let error: Error = serde_json::from_value(json)
-                    .map_err(|e| e.to_string())?;
-                error!("error: {:?}", error)
-            },
-            MessageType::L2update => {
-                let l2update: L2update = serde_json::from_value(json)
-                    .map_err(|e| e.to_string())?;
-                let mut book_processor = self.book_processor.borrow_mut();
-                for &(ref side, ref price, ref size) in l2update.changes.iter() {
-                    let price = Price::parse_str(price)?;
-                    let size = JsonProcessor::parse_size(size)?;
-                    let side = Side::of_str(side)?;
-                    book_processor.update(side, price, size)
-                }
-            },
-            MessageType::Snapshot => {
-                let snapshot: Snapshot = serde_json::from_value(json)
-                    .map_err(|e| e.to_string())?;
-                info!("processing snapshot");
-                let mut book_processor = self.book_processor.borrow_mut();
-                book_processor.clear_on_snapshot();
-                for &(ref price, ref size) in snapshot.bids.iter() {
-                    let price = Price::parse_str(price)?;
-                    let size = JsonProcessor::parse_size(size)?;
-                    book_processor.update(Side::Buy, price, size);
-                }
-                for &(ref price, ref size) in snapshot.asks.iter() {
-                    let price = Price::parse_str(price)?;
-                    let size = JsonProcessor::parse_size(size)?;
-                    book_processor.update(Side::Sell, price, size);
-                }
-            },
-            MessageType::Subscriptions => {
-                let subscriptions: Subscriptions = serde_json::from_value(json)
-                    .map_err(|e| e.to_string())?;
-                info!("subscriptions: {:?}", subscriptions)
-            },
-            MessageType::Heartbeat => {
-                let heartbeat: Heartbeat = serde_json::from_value(json)
-                    .map_err(|e| e.to_string())?;
-                self.book_processor.borrow().log_summary();
-            },
-        }
-        Ok(())
-    }
-}
-
 fn connect(processor: &MessageProcessor, address: &str) -> Result<(), ws::Error> {
-    let subscribe_message = r#"{"type": "subscribe", "product_ids": ["BTC-USD"], "channels": ["level2", "heartbeat"]}"#;
     ws::connect(address, |out| {
-        out.send(subscribe_message).unwrap();
-        info!("succesfully sent subscription message");
+        processor.subscribe_message().iter().for_each(|message| {
+            out.send(&message[..]).unwrap();
+            info!("succesfully sent subscription message");
+        });
 
         move |msg| {
             match msg {
@@ -300,7 +118,7 @@ fn main() {
             println!("Usage: {} log filename", args[0]);
             return
         }
-        let mut logger = Logger::new(&args[2]).unwrap();
+        let mut logger = Logger::new(&args[2], JsonProcessor::subscribe_message()).unwrap();
         connect(&mut logger, "wss://ws-feed.gdax.com").unwrap();
     } else if args[1] == "replay" {
         if args.len() <= 2 {
