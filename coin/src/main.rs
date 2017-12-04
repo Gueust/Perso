@@ -12,6 +12,11 @@ use std::env;
 use std::io::{BufRead, BufReader, Write};
 use std::fs::File;
 
+mod side;
+use side::Side;
+mod price;
+use price::Price;
+
 trait MessageProcessor {
     fn on_message(&self, &str) -> Result<(), String>;
 }
@@ -46,81 +51,6 @@ impl MessageProcessor for Logger {
             },
         }
         Ok(())
-    }
-}
-
-enum Side {
-    Buy,
-    Sell,
-}
-
-impl Side {
-    fn of_str(str : &str) -> Result<Side, String> {
-        match str {
-            "buy" => Ok(Side::Buy),
-            "sell" => Ok(Side::Sell),
-            _ => Err(format!("unknown side {}", str)),
-        }
-    }
-}
-
-// Price encoded as int with 6 digits.
-#[derive(PartialEq, Eq, PartialOrd, Ord)]
-struct Price(i64);
-
-impl Price {
-    // Assumes ascii encoding and non-negative prices.
-    fn parse_str(str: &str) -> Result<Price, String> {
-        let mut pre_dot: i64 = 0;
-        let mut seen_dot = false;
-        let mut post_dot: i64 = 0;
-        let mut post_dot_cnt: i64 = 0;
-        for c in str.chars() {
-            if c == '.' {
-                seen_dot = true;
-                continue
-            }
-            if c < '0' || c > '9' {
-                Err(format!("unable to parse as price {}", str))?
-            }
-            let digit = match c.to_digit(10) {
-                Some(digit) => digit as i64,
-                None => Err(format!("unable to parse as price {}", str))?
-            };
-            if seen_dot {
-                if post_dot_cnt < 6 {
-                    post_dot = 10 * post_dot + digit;
-                    post_dot_cnt += 1;
-                } else {
-                    if digit != 0 {
-                        Err(format!("unable to parse as price (too many digits) {}", str))?
-                    }
-                }
-            } else {
-                pre_dot = 10 * pre_dot + digit;
-            }
-        }
-        for c in post_dot_cnt..6 {
-            post_dot *= 10;
-        }
-        Ok(Price(pre_dot * 1_000_000 + post_dot))
-    }
-
-    fn to_float(&self) -> f64 {
-        let &Price(p) = self;
-        p as f64 / 1e6
-    }
-}
-
-impl std::fmt::Display for Price {
-    fn fmt(&self, f: &mut std::fmt::Formatter) -> std::fmt::Result {
-        self.to_float().fmt(f)
-    }
-}
-
-impl std::fmt::Debug for Price {
-    fn fmt(&self, f: &mut std::fmt::Formatter) -> std::fmt::Result {
-        self.to_float().fmt(f)
     }
 }
 
