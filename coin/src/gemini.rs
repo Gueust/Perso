@@ -46,30 +46,33 @@ impl JsonProcessor {
         }
     }
 
-    fn get_events(&self, json: &serde_json::Value) -> Result<Vec<Change>, String> {
-        let message_type = JsonProcessor::get_type(json)?;
-        if message_type != "update" {
-            Err(format!("unexpected type {}", message_type))?
+    fn get_events(&self, json: serde_json::Value) -> Result<Vec<Change>, String> {
+        // Remove this once NLL is in.
+        {
+            let message_type = JsonProcessor::get_type(&json)?;
+            if JsonProcessor::get_type(&json)? != "update" {
+                Err(format!("unexpected type {}", message_type))?
+            }
         }
         let events = match json {
-            &serde_json::Value::Object(ref map) => map.get("events"),
+            // We remove the 'events' key in order to avoid cloning the array.
+            serde_json::Value::Object(mut map) => map.remove("events"),
             _ => Err("json message is not an object".to_string())?,
         };
-        let events = match events {
+        let mut events = match events {
             None => Err("no events")?,
-            Some(&serde_json::Value::Array(ref events)) => events,
+            Some(serde_json::Value::Array(events)) => events,
             Some(_) => Err("unexpected event type")?,
         };
         let mut results = Vec::new();
-        for &ref event in events {
-            let event_type = JsonProcessor::get_type(event)?;
-            if event_type == "change" {
-                // TODO: avoid cloning the structure if possible.
-                let change: Change = serde_json::from_value(event.clone())
+        for event in events.drain(..) {
+            let event_type_is_change = JsonProcessor::get_type(&event)? == "change";
+            // TODO: handle the other event types
+            if event_type_is_change {
+                let change: Change = serde_json::from_value(event)
                     .map_err(|e| e.to_string())?;
                 results.push(change);
             }
-            // TODO: handle the other event types
         }
         Ok(results)
     }
@@ -88,8 +91,8 @@ impl MessageProcessor for JsonProcessor {
         let json: serde_json::Value = serde_json::from_str(&msg)
             .map_err(|e| e.to_string())?;
         let mut book_processor = self.book_processor.borrow_mut();
-        for event in self.get_events(&json)? {
-            let initial = event.reason == "initial"; // TODO: handle this
+        for event in self.get_events(json)? {
+            let _initial = event.reason == "initial"; // TODO: handle this
             let side = match event.side.as_str() {
                 "bid" => Side::Buy,
                 "ask" => Side::Sell,

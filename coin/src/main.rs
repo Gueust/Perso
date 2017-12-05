@@ -4,7 +4,7 @@ extern crate env_logger;
 #[macro_use] extern crate log;
 extern crate serde;
 #[macro_use] extern crate serde_derive;
-#[macro_use] extern crate serde_json;
+extern crate serde_json;
 
 use std::cell::RefCell;
 use std::env;

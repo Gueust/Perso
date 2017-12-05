@@ -144,7 +144,7 @@ impl MessageProcessor for JsonProcessor {
                 info!("subscriptions: {:?}", subscriptions)
             },
             MessageType::Heartbeat => {
-                let heartbeat: Heartbeat = serde_json::from_value(json)
+                let _heartbeat: Heartbeat = serde_json::from_value(json)
                     .map_err(|e| e.to_string())?;
                 self.book_processor.borrow().log_summary();
             },
