@@ -4,6 +4,7 @@ version = "0.1.0"
 authors = ["laurent"]
 
 [dependencies]
+chrono = "0.4"
 env_logger = "0.4.3"
 log = "0.3.8"
 serde = "1.0.23"

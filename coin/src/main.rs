@@ -1,3 +1,4 @@
+extern crate chrono;
 extern crate ws;
 extern crate env_logger;
 
@@ -18,6 +19,7 @@ mod message_processor;
 use message_processor::MessageProcessor;
 mod gdax;
 mod gemini;
+mod time;
 
 enum LoggerKind {
     File(RefCell<File>),
@@ -47,16 +49,18 @@ impl MessageProcessor for Logger {
         self.subscribe_message.clone()
     }
 
-    fn on_message(&self, message: &str) -> Result<(), String> {
+    fn on_message(&self, now: &time::Time, message: &str) -> Result<(), String> {
         match self.kind {
             LoggerKind::File(ref file) => {
+                file.borrow_mut().write_all(now.to_string().as_bytes())
+                    .map_err(|e| e.to_string())?;
                 file.borrow_mut().write_all(message.as_bytes())
                     .map_err(|e| e.to_string())?;
                 file.borrow_mut().write_all(b"\n")
                     .map_err(|e| e.to_string())?;
             },
             LoggerKind::Stdout => {
-                print!("{}\n", message);
+                print!("{} {}\n", now.to_string(), message);
             },
         }
         Ok(())
@@ -76,7 +80,8 @@ fn connect(processor: &MessageProcessor, address: &str) -> Result<(), ws::Error>
                     error!("unexpected binary message {:?}", vec);
                 }
                 ws::Message::Text(msg) => {
-                    match processor.on_message(&msg) {
+                    let now = time::Time::now();
+                    match processor.on_message(&now, &msg) {
                         Ok(()) => {
                         }
                         Err(error) => {
@@ -90,12 +95,14 @@ fn connect(processor: &MessageProcessor, address: &str) -> Result<(), ws::Error>
     })
 }
 
-fn replay(processor: &MessageProcessor, filename: &str) -> Result<(), std::io::Error> {
-    let file = File::open(filename)?;
+fn replay(processor: &MessageProcessor, filename: &str) -> Result<(), String> {
+    let file = File::open(filename)
+        .map_err(|e| e.to_string())?;
     let buf_reader = BufReader::new(file);
     for line in buf_reader.lines() {
-        let line = line?;
-        match processor.on_message(&line) {
+        let line = line.map_err(|e| e.to_string())?;
+        let now = time::Time::parse(&line[..time::LEN])?;
+        match processor.on_message(&now, &line[time::LEN..]) {
             Ok(()) => (),
             Err(e) => error!("Error when parsing message {}", e),
         }

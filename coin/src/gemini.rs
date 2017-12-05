@@ -6,6 +6,7 @@ use book_processor::BookProcessor;
 use message_processor::MessageProcessor;
 use side::Side;
 use price::Price;
+use time::Time;
 
 #[derive(Debug, Serialize, Deserialize)]
 struct Change {
@@ -87,7 +88,7 @@ impl MessageProcessor for JsonProcessor {
         JsonProcessor::subscribe_message()
     }
 
-    fn on_message(&self, msg: &str) -> Result<(), String> {
+    fn on_message(&self, time: &Time, msg: &str) -> Result<(), String> {
         let json: serde_json::Value = serde_json::from_str(&msg)
             .map_err(|e| e.to_string())?;
         let mut book_processor = self.book_processor.borrow_mut();
