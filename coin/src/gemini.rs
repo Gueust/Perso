@@ -93,7 +93,7 @@ impl MessageProcessor for JsonProcessor {
             .map_err(|e| e.to_string())?;
         let mut book_processor = self.book_processor.borrow_mut();
         for event in self.get_events(json)? {
-            let _initial = event.reason == "initial"; // TODO: handle this
+            let initial_snapshot = event.reason == "initial";
             let side = match event.side.as_str() {
                 "bid" => Side::Buy,
                 "ask" => Side::Sell,
@@ -101,7 +101,7 @@ impl MessageProcessor for JsonProcessor {
             };
             let price = Price::parse_str(&event.price)?;
             let size = JsonProcessor::parse_size(&event.remaining)?;
-            book_processor.on_update(time, side, price, size)
+            book_processor.on_update(time, side, price, size, initial_snapshot)
         }
         book_processor.log_summary();
         Ok(())

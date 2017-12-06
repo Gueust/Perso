@@ -27,4 +27,10 @@ impl Time {
         Time(chrono::DateTime::<chrono::Utc>::from_utc(
             chrono::NaiveDateTime::from_timestamp(0, 0), chrono::Utc))
     }
+
+    pub fn signed_duration_since(&self, ref_time: &Time) -> chrono::Duration {
+        let &Time(ref time) = self;
+        let &Time(ref ref_time) = ref_time;
+        time.signed_duration_since(*ref_time)
+    }
 }
