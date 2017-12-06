@@ -12,11 +12,12 @@ enum LoggerKind {
 pub struct Logger {
     kind: LoggerKind,
     subscribe_message: Option<String>,
+    server_name: String,
 }
 
 // TODO: split this into two traits: MessageProcesor and JsonConnection
-//       also add the server name to JsonConnection
 pub trait MessageProcessor {
+    fn server_name(&self) -> String;
     fn subscribe_message(&self) -> Option<String>;
     fn on_message(&self, &time::Time, &str) -> Result<(), String>;
 
@@ -28,7 +29,11 @@ pub trait MessageProcessor {
                 let file = File::create(filename)?;
                 LoggerKind::File(RefCell::new(file))
             };
-        Ok(Logger { kind: kind, subscribe_message: self.subscribe_message() })
+        Ok(Logger {
+            kind: kind,
+            subscribe_message: self.subscribe_message(),
+            server_name: self.server_name(),
+        })
     }
 }
 
@@ -36,6 +41,10 @@ pub trait MessageProcessor {
 impl MessageProcessor for Logger {
     fn subscribe_message(&self) -> Option<String> {
         self.subscribe_message.clone()
+    }
+
+    fn server_name(&self) -> String {
+        self.server_name.clone()
     }
 
     fn on_message(&self, now: &time::Time, message: &str) -> Result<(), String> {

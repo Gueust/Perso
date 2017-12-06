@@ -92,14 +92,15 @@ impl JsonProcessor {
             },
         }
     }
-    pub fn subscribe_message() -> Option<String> {
-        Some(String::from(r#"{"type": "subscribe", "product_ids": ["BTC-USD"], "channels": ["level2", "heartbeat"]}"#))
-    }
 }
 
 impl MessageProcessor for JsonProcessor {
     fn subscribe_message(&self) -> Option<String> {
-        JsonProcessor::subscribe_message()
+        Some(String::from(r#"{"type": "subscribe", "product_ids": ["BTC-USD"], "channels": ["level2", "heartbeat"]}"#))
+    }
+
+    fn server_name(&self) -> String {
+        "wss://ws-feed.gdax.com".to_string()
     }
 
     fn on_message(&self, time: &Time, msg: &str) -> Result<(), String> {

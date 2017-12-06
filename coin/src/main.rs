@@ -20,8 +20,8 @@ mod gdax;
 mod gemini;
 mod time;
 
-fn connect(processor: &MessageProcessor, address: &str) -> Result<(), ws::Error> {
-    ws::connect(address, |out| {
+fn connect(processor: &MessageProcessor) -> Result<(), ws::Error> {
+    ws::connect(processor.server_name(), |out| {
         processor.subscribe_message().iter().for_each(|message| {
             out.send(&message[..]).unwrap();
             info!("succesfully sent subscription message");
@@ -78,26 +78,27 @@ fn main() {
         println!("Usage: {} real-time|log|replay", args[0]);
         return
     }
-    if args[1] == "real-time-gdax" {
-        let mut json_processor = gdax::JsonProcessor::new();
-        connect(&mut json_processor, "wss://ws-feed.gdax.com").unwrap();
-    } else if args[1] == "real-time-gemini" {
-        let mut json_processor = gemini::JsonProcessor::new();
-        connect(&mut json_processor, "wss://api.gemini.com/v1/marketdata/btcusd").unwrap();
-    } else if args[1] == "log-gdax" {
-        if args.len() <= 2 {
-            println!("Usage: {} log filename", args[0]);
+    if args[1] == "real-time" {
+        if args.len() != 3 {
+            println!("Usage: {} real-time gdax|gemini", args[0]);
             return
         }
-        let processor = gdax::JsonProcessor::new();
-        let mut logger = processor.logger(&args[2]).unwrap();
-        connect(&mut logger, "wss://ws-feed.gdax.com").unwrap();
-    } else if args[1] == "replay-gdax" {
-        if args.len() <= 2 {
-            println!("Usage: {} replay filename", args[0]);
+        let mut processor = feed_processor(&args[2]).unwrap();
+        connect(&mut *processor).unwrap();
+    } else if args[1] == "log" {
+        if args.len() != 4 {
+            println!("Usage: {} log gdax|gemini filename", args[0]);
             return
         }
-        let mut json_processor = gdax::JsonProcessor::new();
-        replay(&mut json_processor, &args[2]).unwrap();
+        let processor = feed_processor(&args[2]).unwrap();
+        let mut logger = processor.logger(&args[3]).unwrap();
+        connect(&mut logger).unwrap();
+    } else if args[1] == "replay" {
+        if args.len() != 4 {
+            println!("Usage: {} replay gdax|gemini filename", args[0]);
+            return
+        }
+        let mut processor = feed_processor(&args[2]).unwrap();
+        replay(&mut *processor, &args[3]).unwrap();
     }
 }

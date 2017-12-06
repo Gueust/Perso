@@ -77,15 +77,15 @@ impl JsonProcessor {
         }
         Ok(results)
     }
-
-    pub fn subscribe_message() -> Option<String> {
-        None
-    }
 }
 
 impl MessageProcessor for JsonProcessor {
     fn subscribe_message(&self) -> Option<String> {
-        JsonProcessor::subscribe_message()
+        None
+    }
+
+    fn server_name(&self) -> String {
+        "wss://api.gemini.com/v1/marketdata/btcusd".to_string()
     }
 
     fn on_message(&self, time: &Time, msg: &str) -> Result<(), String> {
