@@ -101,7 +101,7 @@ impl MessageProcessor for JsonProcessor {
             };
             let price = Price::parse_str(&event.price)?;
             let size = JsonProcessor::parse_size(&event.remaining)?;
-            book_processor.on_update(side, price, size)
+            book_processor.on_update(time, side, price, size)
         }
         book_processor.log_summary();
         Ok(())

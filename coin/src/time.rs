@@ -4,6 +4,7 @@ use chrono::TimeZone;
 const FORMAT: &'static str = "%Y-%m-%d %H:%M:%S.%f";
 pub const LEN: usize = 29;
 
+#[derive(Clone)]
 pub struct Time(chrono::DateTime<chrono::Utc>);
 
 impl Time {
@@ -20,5 +21,10 @@ impl Time {
         chrono::Utc.datetime_from_str(str, FORMAT)
             .map(|e| Time(e))
             .map_err(|e| e.to_string())
+    }
+
+    pub fn epoch() -> Time {
+        Time(chrono::DateTime::<chrono::Utc>::from_utc(
+            chrono::NaiveDateTime::from_timestamp(0, 0), chrono::Utc))
     }
 }

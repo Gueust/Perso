@@ -2,12 +2,14 @@ use std::collections::BTreeMap;
 
 use side::Side;
 use price::Price;
+use time::Time;
 
 pub struct BookProcessor {
-    bid_sizes : BTreeMap< Price, f64 >,
-    ask_sizes : BTreeMap< Price, f64 >,
-    total_bid_size : f64,
-    total_ask_size : f64,
+    bid_sizes: BTreeMap< Price, f64 >,
+    ask_sizes: BTreeMap< Price, f64 >,
+    total_bid_size: f64,
+    total_ask_size: f64,
+    last_update: Time,
 }
 
 // TODO: staleness checks.
@@ -21,6 +23,7 @@ impl BookProcessor {
             ask_sizes: BTreeMap::new(),
             total_bid_size: 0.0,
             total_ask_size: 0.0,
+            last_update: Time::epoch(),
         }
     }
 
@@ -29,6 +32,7 @@ impl BookProcessor {
         self.ask_sizes.clear();
         self.total_bid_size = 0.0;
         self.total_ask_size = 0.0;
+        self.last_update = Time::epoch();
     }
 
     pub fn log_summary(&self) {
@@ -41,7 +45,8 @@ impl BookProcessor {
             best_ask);
     }
 
-    pub fn on_update(&mut self, side: Side, price: Price, size: f64) {
+    pub fn on_update(&mut self, time: &Time, side: Side, price: Price, size: f64) {
+        self.last_update = time.clone();
         let ref mut to_update = match side {
             Side::Buy => &mut self.bid_sizes,
             Side::Sell => &mut self.ask_sizes,
