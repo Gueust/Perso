@@ -51,7 +51,6 @@ pub struct BookProcessor {
 }
 
 // TODO: take the product name as argument + assert that it is correct.
-// TODO: on_initial_snapshot_done.
 // TODO: on_error (call clear_on_snapshot).
 impl BookProcessor {
     pub fn new() -> BookProcessor {

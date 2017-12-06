@@ -96,6 +96,7 @@ impl JsonProcessor {
 
 impl MessageProcessor for JsonProcessor {
     fn subscribe_message(&self) -> Option<String> {
+        // TODO: ask for trades and handle the associated json message.
         Some(String::from(r#"{"type": "subscribe", "product_ids": ["BTC-USD"], "channels": ["level2", "heartbeat"]}"#))
     }
 
