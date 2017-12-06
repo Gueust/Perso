@@ -63,6 +63,7 @@ fn replay(processor: &MessageProcessor, filename: &str) -> Result<(), String> {
     Ok(())
 }
 
+// This returns a box as the MessageProcessor size is unknown at compile time.
 fn feed_processor(feed_name: &str) -> Result<Box<MessageProcessor>, String> {
     match feed_name {
         "gdax" => Ok(Box::new(gdax::JsonProcessor::new())),
