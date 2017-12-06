@@ -7,9 +7,8 @@ extern crate serde;
 #[macro_use] extern crate serde_derive;
 extern crate serde_json;
 
-use std::cell::RefCell;
 use std::env;
-use std::io::{BufRead, BufReader, Write};
+use std::io::{BufRead, BufReader};
 use std::fs::File;
 
 mod side;
@@ -20,52 +19,6 @@ use message_processor::MessageProcessor;
 mod gdax;
 mod gemini;
 mod time;
-
-enum LoggerKind {
-    File(RefCell<File>),
-    Stdout,
-}
-
-struct Logger {
-    kind: LoggerKind,
-    subscribe_message: Option<String>,
-}
-
-impl Logger {
-    fn new(filename: &str, subscribe_message: Option<String>) -> Result<Logger, std::io::Error> {
-        let kind =
-            if filename == "stdout" {
-                LoggerKind::Stdout
-            } else {
-                let file = File::create(filename)?;
-                LoggerKind::File(RefCell::new(file))
-            };
-        Ok(Logger { kind: kind, subscribe_message: subscribe_message })
-    }
-}
-
-impl MessageProcessor for Logger {
-    fn subscribe_message(&self) -> Option<String> {
-        self.subscribe_message.clone()
-    }
-
-    fn on_message(&self, now: &time::Time, message: &str) -> Result<(), String> {
-        match self.kind {
-            LoggerKind::File(ref file) => {
-                file.borrow_mut().write_all(now.to_string().as_bytes())
-                    .map_err(|e| e.to_string())?;
-                file.borrow_mut().write_all(message.as_bytes())
-                    .map_err(|e| e.to_string())?;
-                file.borrow_mut().write_all(b"\n")
-                    .map_err(|e| e.to_string())?;
-            },
-            LoggerKind::Stdout => {
-                print!("{} {}\n", now.to_string(), message);
-            },
-        }
-        Ok(())
-    }
-}
 
 fn connect(processor: &MessageProcessor, address: &str) -> Result<(), ws::Error> {
     ws::connect(address, |out| {
@@ -110,6 +63,14 @@ fn replay(processor: &MessageProcessor, filename: &str) -> Result<(), String> {
     Ok(())
 }
 
+fn feed_processor(feed_name: &str) -> Result<Box<MessageProcessor>, String> {
+    match feed_name {
+        "gdax" => Ok(Box::new(gdax::JsonProcessor::new())),
+        "gemini" => Ok(Box::new(gemini::JsonProcessor::new())),
+        _ => Err(format!("unsupported feed {}", feed_name)),
+    }
+}
+
 fn main() {
     env_logger::init().unwrap();
     let args: Vec<_> = env::args().collect();
@@ -128,7 +89,8 @@ fn main() {
             println!("Usage: {} log filename", args[0]);
             return
         }
-        let mut logger = Logger::new(&args[2], gdax::JsonProcessor::subscribe_message()).unwrap();
+        let processor = gdax::JsonProcessor::new();
+        let mut logger = processor.logger(&args[2]).unwrap();
         connect(&mut logger, "wss://ws-feed.gdax.com").unwrap();
     } else if args[1] == "replay-gdax" {
         if args.len() <= 2 {
